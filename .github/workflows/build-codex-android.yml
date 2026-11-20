@@ -1,0 +1,48 @@
+name: Build Codex for Termux
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Check out the build patch
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Check out Termux build recipe for Codex 0.170.0
+        uses: actions/checkout@v4
+        with:
+          repository: termux/termux-packages
+          ref: c99df1c652ab3dbada721f527e403e6a97f682a9
+          path: termux-build
+          persist-credentials: false
+
+      - name: Build Android ARM64 package
+        working-directory: termux-build
+        run: |
+          cp ../packages/codex/99-scroll-and-quota-reset.patch packages/codex/
+          ./scripts/run-docker.sh ./build-package.sh -a aarch64 codex
+
+      - name: Verify Android package
+        working-directory: termux-build
+        run: |
+          shopt -s nullglob
+          packages=(debs/codex_*_aarch64.deb)
+          test "${#packages[@]}" -eq 1
+          test "$(dpkg-deb -f "${packages[0]}" Package)" = codex
+          test "$(dpkg-deb -f "${packages[0]}" Architecture)" = aarch64
+          dpkg-deb -I "${packages[0]}"
+
+      - name: Upload Android ARM64 package
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-termux-aarch64
+          path: termux-build/debs/codex_*_aarch64.deb
+          if-no-files-found: error
