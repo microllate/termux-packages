@@ -1,0 +1,112 @@
+--- a/codex-rs/tui/src/app.rs
++++ b/codex-rs/tui/src/app.rs
+@@ -592,6 +592,7 @@
+     turn_tips: turn_tips::TurnTips,
+     pub(crate) transcript_view: crate::transcript_view::TranscriptView,
+     conversation_frame: owned_transcript::ConversationFrame,
++    last_transcript_wheel_refresh: Option<(ratatui::layout::Size, Instant)>,
+     last_rendered_history_tail: Option<history_ui::RenderedHistoryTail>,
+     last_thread_usage_status_cell: Option<history_ui::ThreadUsageStatusHistory>,
+     pub(crate) pending_thread_usage_history_refresh: bool,
+--- a/codex-rs/tui/src/app/owned_transcript.rs
++++ b/codex-rs/tui/src/app/owned_transcript.rs
+@@ -869,8 +869,28 @@
+         }
+         if let TuiEvent::Mouse(mouse) = event {
+             let composer_ready = self.chat_widget.prepare_composer_mouse(*mouse);
+-            if mouse.kind != crossterm::event::MouseEventKind::Moved {
+-                self.refresh_owned_transcript(tui)?;
++            if mouse.kind != MouseEventKind::Moved {
++                if is_vertical_wheel
++                    && self.chat_widget.no_modal_or_popup_active()
++                    && self.conversation_frame.sidebar.is_none()
++                    && self.conversation_frame.chat_strip.is_none()
++                    && !self.conversation_frame.has_caller_inset()
++                {
++                    let size = tui.prepare_draw_size()?;
++                    let recently_refreshed =
++                        self.last_transcript_wheel_refresh
++                            .is_some_and(|(previous_size, time)| {
++                                previous_size == size
++                                    && time.elapsed() < crate::tui::TARGET_FRAME_INTERVAL
++                            });
++                    if !recently_refreshed {
++                        self.refresh_owned_transcript(tui)?;
++                        self.last_transcript_wheel_refresh = Some((size, Instant::now()));
++                    }
++                } else {
++                    self.last_transcript_wheel_refresh = None;
++                    self.refresh_owned_transcript(tui)?;
++                }
+             }
+             if self
+                 .conversation_frame
+--- a/codex-rs/tui/src/app/startup.rs
++++ b/codex-rs/tui/src/app/startup.rs
+@@ -1019,6 +1019,7 @@
+             turn_tips: Default::default(),
+             transcript_view: Default::default(),
+             conversation_frame: Default::default(),
++            last_transcript_wheel_refresh: None,
+             last_rendered_history_tail: None,
+             last_thread_usage_status_cell: None,
+             pending_thread_usage_history_refresh: false,
+--- a/codex-rs/tui/src/app/test_support.rs
++++ b/codex-rs/tui/src/app/test_support.rs
+@@ -77,6 +77,7 @@
+         turn_tips: Default::default(),
+         transcript_view: Default::default(),
+         conversation_frame: Default::default(),
++        last_transcript_wheel_refresh: None,
+         last_rendered_history_tail: None,
+         last_thread_usage_status_cell: None,
+         pending_thread_usage_history_refresh: false,
+--- a/codex-rs/tui/src/app/tests.rs
++++ b/codex-rs/tui/src/app/tests.rs
+@@ -9071,6 +9071,7 @@
+         turn_tips: Default::default(),
+         transcript_view: Default::default(),
+         conversation_frame: Default::default(),
++        last_transcript_wheel_refresh: None,
+         last_rendered_history_tail: None,
+         last_thread_usage_status_cell: None,
+         pending_thread_usage_history_refresh: false,
+@@ -9213,6 +9214,7 @@
+             turn_tips: Default::default(),
+             transcript_view: Default::default(),
+             conversation_frame: Default::default(),
++            last_transcript_wheel_refresh: None,
+             last_rendered_history_tail: None,
+             last_thread_usage_status_cell: None,
+             pending_thread_usage_history_refresh: false,
+--- a/codex-rs/tui/src/chatwidget/status_surfaces.rs
++++ b/codex-rs/tui/src/chatwidget/status_surfaces.rs
+@@ -212,6 +212,11 @@
+         let mut segments = Vec::new();
+         for item in &selections.status_line_items {
+             if let Some(value) = self.status_line_value_for_item(*item) {
++                let reset = self.status_line_rate_limit_reset(*item);
++                let value = match (value.strip_suffix(" left"), reset) {
++                    (Some(quota), Some(reset)) => format!("{quota} ↻ {reset}"),
++                    _ => value,
++                };
+                 segments.push((*item, value));
+             }
+         }
+@@ -223,6 +228,16 @@
+             self.status_line_pull_request_url(),
+         );
+         self.set_status_line(line.map(Into::into));
++    }
++
++    fn status_line_rate_limit_reset(&self, item: StatusLineItem) -> Option<&str> {
++        let snapshot = self.rate_limit_snapshots_by_limit_id.get("codex")?;
++        let (window, _) = match item {
++            StatusLineItem::FiveHourLimit => five_hour_status_window(snapshot),
++            StatusLineItem::WeeklyLimit => weekly_status_window(snapshot),
++            _ => return None,
++        }?;
++        window.resets_at.as_deref()
+     }
+ 
+     /// Clears the terminal title Codex most recently wrote, if any.
