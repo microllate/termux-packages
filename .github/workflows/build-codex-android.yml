@@ -2,6 +2,9 @@ name: Build Codex for Termux
 
 on:
   workflow_dispatch:
+  push:
+    branches: [master]
+    paths: [.github/workflows/build-codex-android.yml]
 
 permissions:
   contents: read
@@ -28,7 +31,7 @@ jobs:
         working-directory: termux-build
         run: |
           cp ../packages/codex/99-scroll-and-quota-reset.patch packages/codex/
-          ./scripts/run-docker.sh ./build-package.sh -a aarch64 codex
+          ./scripts/run-docker.sh ./build-package.sh -i -a aarch64 codex
 
       - name: Verify Android package
         working-directory: termux-build
