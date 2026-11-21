@@ -2,9 +2,6 @@ name: Build Codex for Termux
 
 on:
   workflow_dispatch:
-  push:
-    branches: [master]
-    paths: [.github/workflows/build-codex-android.yml]
 
 permissions:
   contents: read
