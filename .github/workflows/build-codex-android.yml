@@ -2,6 +2,9 @@ name: Build Codex for Termux
 
 on:
   workflow_dispatch:
+  push:
+    branches: [master]
+    paths: [.github/workflows/build-codex-android.yml]
 
 permissions:
   contents: read
@@ -38,13 +41,14 @@ jobs:
           ) &
           monitor=$!
           trap 'kill "$monitor" 2>/dev/null || true' EXIT
-          ./scripts/run-docker.sh ./build-package.sh -i -j2 -a aarch64 codex
+          ./scripts/run-docker.sh ./build-package.sh -i -j2 -a aarch64 -o ./codex-artifacts codex
 
       - name: Verify Android package
         working-directory: termux-build
         run: |
           shopt -s nullglob
-          packages=(debs/codex_*_aarch64.deb)
+          find codex-artifacts -maxdepth 1 -type f -print
+          packages=(codex-artifacts/codex_*.deb)
           test "${#packages[@]}" -eq 1
           test "$(dpkg-deb -f "${packages[0]}" Package)" = codex
           test "$(dpkg-deb -f "${packages[0]}" Architecture)" = aarch64
@@ -54,5 +58,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: codex-termux-aarch64
-          path: termux-build/debs/codex_*_aarch64.deb
+          path: termux-build/codex-artifacts/codex_*.deb
           if-no-files-found: error
