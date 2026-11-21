@@ -31,6 +31,8 @@ jobs:
         working-directory: termux-build
         run: |
           cp ../packages/codex/99-scroll-and-quota-reset.patch packages/codex/
+          mkdir -p codex-artifacts
+          chmod a+rwx codex-artifacts
           (
             while true; do
               date -u
@@ -41,7 +43,10 @@ jobs:
           ) &
           monitor=$!
           trap 'kill "$monitor" 2>/dev/null || true' EXIT
-          ./scripts/run-docker.sh ./build-package.sh -i -j2 -a aarch64 -o ./codex-artifacts codex
+          ./scripts/run-docker.sh bash -ec '
+            : > codex-artifacts/.write-check
+            exec ./build-package.sh -i -j2 -a aarch64 -o ./codex-artifacts codex
+          '
 
       - name: Verify Android package
         working-directory: termux-build
