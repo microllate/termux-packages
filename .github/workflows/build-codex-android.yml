@@ -2,6 +2,9 @@ name: Build Codex for Termux
 
 on:
   workflow_dispatch:
+  push:
+    branches: [master]
+    paths: [.github/workflows/build-codex-android.yml]
 
 permissions:
   contents: read
@@ -29,7 +32,7 @@ jobs:
         run: |
           cp ../packages/codex/99-scroll-and-quota-reset.patch packages/codex/
           mkdir -p codex-artifacts
-          chmod a+rwx codex-artifacts
+          export CONTAINER_NAME=codex-android-builder
           (
             while true; do
               date -u
@@ -41,9 +44,13 @@ jobs:
           monitor=$!
           trap 'kill "$monitor" 2>/dev/null || true' EXIT
           ./scripts/run-docker.sh bash -ec '
-            : > codex-artifacts/.write-check
-            exec ./build-package.sh -i -j2 -a aarch64 -o ./codex-artifacts codex
+            mkdir -p /home/builder/codex-artifacts
+            printf ready > /home/builder/codex-artifacts/.write-check
           '
+          docker cp "$CONTAINER_NAME:/home/builder/codex-artifacts/.write-check" codex-artifacts/
+          test "$(cat codex-artifacts/.write-check)" = ready
+          ./scripts/run-docker.sh ./build-package.sh -i -j2 -a aarch64 -o /home/builder/codex-artifacts codex
+          docker cp "$CONTAINER_NAME:/home/builder/codex-artifacts/." codex-artifacts/
 
       - name: Verify Android package
         working-directory: termux-build
